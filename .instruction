@@ -10,3 +10,10 @@ npm run dev                                                             |  run w
 
 python bot.py                                                           |  run bot 
 
+
+
+!-------------------------------------------------------------------------------------! GIT 
+git add .
+git commit -m "Feature: Full working version in Codespaces with SQLite and WebApp"
+git push origin main
+
