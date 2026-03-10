@@ -1,7 +1,7 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.types.web_app_info import WebAppInfo
 
-WEB_APP_URL = "https://unstringed-in-perplexed.ngrok-free.dev" 
+WEB_APP_URL = "https://didactic-space-xylophone-v6xp7595qp4fxgqv-5173.app.github.dev/" #Web Link
 
 def get_main_keyboard(has_access: bool = False, has_used_trial: bool = False) -> InlineKeyboardMarkup:
     buttons = []

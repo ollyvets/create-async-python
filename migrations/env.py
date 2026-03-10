@@ -8,6 +8,11 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
+config = context.config
+section = config.get_section(config.config_ini_section)
+
+section["sqlalchemy.url"] = os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from database.models import Base

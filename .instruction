@@ -1,0 +1,12 @@
+https://didactic-space-xylophone-v6xp7595qp4fxgqv-8000.app.github.dev/api/postback?sub1=493534311&action=deposit&transaction_id=random_test_126&secret=my_super_secret_key_123
+
+https://didactic-space-xylophone-v6xp7595qp4fxgqv-8000.app.github.dev/  |  8000 port
+
+https://didactic-space-xylophone-v6xp7595qp4fxgqv-5173.app.github.dev/  |  WebApp port
+
+python -m uvicorn api:app --reload --port 8000                          |  start 8000 port
+
+npm run dev                                                             |  run web app 
+
+python bot.py                                                           |  run bot 
+
