@@ -17,5 +17,7 @@ class GameState(BaseModel):
 
 class Recommendation(BaseModel):
     action: Action
-    win_probability: float
+    win_prob: float
+    loss_prob: float
+    push_prob: float
     expected_value: float

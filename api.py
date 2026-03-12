@@ -7,7 +7,7 @@ from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, Request, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from aiogram import Bot
 from pydantic import BaseModel
 from typing import List
@@ -24,6 +24,7 @@ bot = Bot(token=BOT_TOKEN)
 
 class SessionStartRequest(BaseModel):
     total_decks: int
+    deposit: float
 
 class AnalyzeRequest(BaseModel):
     session_id: int
@@ -71,7 +72,29 @@ async def get_current_user(x_tg_init_data: str = Header(...), session: AsyncSess
     
     return user
 
-from sqlalchemy import delete
+@app.get("/api/bj/session/active")
+async def get_active_session(
+    user: User = Depends(get_current_user), 
+    session: AsyncSession = Depends(get_session)
+):
+    result = await session.execute(
+        select(GameSession)
+        .where(GameSession.telegram_id == user.telegram_id)
+        .where(GameSession.is_active == True)
+    )
+    game_session = result.scalar_one_or_none()
+    
+    if not game_session:
+        return {"has_active": False}
+        
+    return {
+        "has_active": True,
+        "session_id": game_session.id,
+        "balance": game_session.current_balance,
+        "running_count": game_session.running_count,
+        "cards_dealt": game_session.cards_dealt,
+        "started_at": game_session.started_at.isoformat() + "Z" if game_session.started_at else None
+    }
 
 @app.post("/api/bj/session")
 async def start_session(
@@ -94,8 +117,8 @@ async def start_session(
     
     new_session = GameSession(
         telegram_id=user.telegram_id,
-        start_balance=user.virtual_balance,
-        current_balance=user.virtual_balance,
+        start_balance=req.deposit,
+        current_balance=req.deposit,
         running_count=0,
         cards_dealt=0,
         is_active=True
@@ -145,8 +168,10 @@ async def record_result(
     if not game_session or game_session.telegram_id != user.telegram_id or not game_session.is_active:
         raise HTTPException(status_code=400, detail="Invalid session")
 
-    user.virtual_balance += req.profit
-    game_session.current_balance = user.virtual_balance
+    # ЗАЩИТА ОТ МИНУСА
+    user.virtual_balance = max(0.0, user.virtual_balance + req.profit)
+    game_session.current_balance = max(0.0, game_session.current_balance + req.profit)
+    
     game_session.running_count = req.new_running_count
     game_session.cards_dealt = req.new_cards_dealt
     
@@ -168,7 +193,7 @@ async def record_result(
     session.add(hand_history)
     await session.commit()
     
-    return {"status": "recorded", "new_balance": user.virtual_balance}
+    return {"status": "recorded", "new_balance": game_session.current_balance}
 
 @app.get("/api/postback")
 async def handle_postback(
