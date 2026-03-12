@@ -5,7 +5,10 @@ const Blackjack = ({ onBack }) => {
   const [phase, setPhase] = useState('loading'); 
   const [sessionId, setSessionId] = useState(null);
   const [sessionDate, setSessionDate] = useState(null);
+  
+  // Модалки
   const [showEndModal, setShowEndModal] = useState(false);
+  const [showBankruptModal, setShowBankruptModal] = useState(false);
   
   const [currency, setCurrency] = useState('USD');
   const [deposit, setDeposit] = useState(1000);
@@ -84,7 +87,8 @@ const Blackjack = ({ onBack }) => {
     
     setDeposit(num);
     const calculatedMin = Math.max(1, Math.round(num * 0.005));
-    const calculatedMax = Math.min(num, Math.max(calculatedMin, Math.round(num * 0.05)));
+    // Авторасчет: Макс ставка не больше 50% от депозита
+    const calculatedMax = Math.min(Math.floor(num * 0.5), Math.max(calculatedMin, Math.round(num * 0.05)));
     
     setMinBet(calculatedMin);
     setMaxBet(calculatedMax);
@@ -100,7 +104,16 @@ const Blackjack = ({ onBack }) => {
     setMaxBet(parseInt(val, 10));
   };
 
+  // Валидация настроек сессии
+  const isSetupValid = 
+    deposit > 0 && 
+    minBet > 0 && 
+    maxBet > 0 && 
+    minBet <= maxBet && 
+    maxBet <= deposit * 0.5;
+
   const startSession = async () => {
+    if (!isSetupValid) return;
     try {
       const data = await apiFetch('/api/bj/session', 'POST', { total_decks: decks, deposit: deposit });
       setSessionId(data.session_id);
@@ -186,8 +199,14 @@ const Blackjack = ({ onBack }) => {
         new_running_count: runningCount,
         new_cards_dealt: cardsDealt
       });
+      
       setBalance(data.new_balance);
       resetHand();
+
+      // Проверка на банкротство
+      if (data.new_balance <= 0) {
+        setShowBankruptModal(true);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -206,6 +225,24 @@ const Blackjack = ({ onBack }) => {
     const d = new Date(dateString);
     return d.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
   };
+
+  const getRecommendedBet = () => {
+    const decksRemaining = Math.max(0.1, decks - (cardsDealt / 52));
+    const trueCount = runningCount / decksRemaining;
+    
+    if (trueCount < 1.5) return minBet;
+    
+    let multiplier = 1;
+    if (trueCount >= 1.5 && trueCount < 2.5) multiplier = 2;
+    else if (trueCount >= 2.5 && trueCount < 3.5) multiplier = 4;
+    else if (trueCount >= 3.5) multiplier = 8;
+    
+    const calcBet = minBet * multiplier;
+    // Ставка не может превышать Max Bet и не может превышать остаток баланса
+    return Math.min(maxBet, balance, Math.max(minBet, calcBet));
+  };
+
+  const recBet = getRecommendedBet();
 
   if (phase === 'loading') {
     return <div className="flex h-full items-center justify-center text-white font-bold tracking-widest uppercase">Initializing...</div>;
@@ -297,10 +334,18 @@ const Blackjack = ({ onBack }) => {
             <option value={8}>8 Decks</option>
           </select>
 
+          {/* ВЫВОД ОШИБОК ВАЛИДАЦИИ */}
+          {!isSetupValid && deposit !== '' && (
+            <div className="text-red-400 text-xs mb-4 text-center font-bold">
+              {minBet > maxBet && <p>Min bet cannot be greater than Max bet.</p>}
+              {maxBet > deposit * 0.5 && <p>Max bet cannot exceed 50% of the deposit.</p>}
+            </div>
+          )}
+
           <button 
-            disabled={!deposit || deposit === 0 || !minBet || !maxBet}
+            disabled={!isSetupValid}
             onClick={startSession} 
-            className={`w-full text-white font-black py-4 rounded-xl transition-transform uppercase tracking-wider ${(!deposit || deposit === 0 || !minBet || !maxBet) ? 'bg-gray-700 cursor-not-allowed opacity-50' : 'bg-blue-600 active:scale-95'}`}
+            className={`w-full text-white font-black py-4 rounded-xl transition-transform uppercase tracking-wider ${!isSetupValid ? 'bg-gray-700 cursor-not-allowed opacity-50' : 'bg-blue-600 active:scale-95'}`}
           >
             Agree & Start
           </button>
@@ -311,6 +356,21 @@ const Blackjack = ({ onBack }) => {
 
   return (
     <div className="flex flex-col h-full pb-4 animate-in fade-in duration-200">
+      
+      {/* МОДАЛКА БАНКРОТСТВА */}
+      {showBankruptModal && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#151b2b] border border-red-900 p-6 rounded-2xl w-full max-w-sm text-center animate-in zoom-in duration-200 shadow-[0_0_50px_rgba(220,38,38,0.3)]">
+            <h3 className="text-3xl font-black text-red-500 mb-2 tracking-widest uppercase">Bankrupt</h3>
+            <p className="text-sm text-gray-400 mb-8">You have lost your entire bankroll for this shoe. It's time to step away or start a new session.</p>
+            <button onClick={() => { setShowBankruptModal(false); setPhase('setup'); }} className="w-full bg-red-600 text-white font-bold py-4 rounded-xl active:scale-95 transition-transform uppercase tracking-wider shadow-lg shadow-red-900/50">
+              Setup New Shoe
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка выхода из сессии */}
       {showEndModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-[#151b2b] border border-gray-800 p-6 rounded-2xl w-full max-w-sm text-center animate-in zoom-in duration-200">
@@ -353,7 +413,10 @@ const Blackjack = ({ onBack }) => {
         {phase === 'action' && recommendation ? (
           <div className="w-full mt-4 animate-in slide-in-from-bottom-4 duration-200">
             <div className="text-sm text-gray-400 font-bold uppercase mb-2">Mathematical Advantage</div>
-            <div className="text-6xl font-black text-green-400 mb-6">{recommendation.action}</div>
+            
+            <div className={`font-black text-green-400 mb-6 ${recommendation.action.length > 6 ? 'text-4xl' : 'text-6xl'}`}>
+              {recommendation.action}
+            </div>
             
             <div className="flex justify-between w-full px-4 mb-8">
               <div className="text-center">
@@ -371,13 +434,32 @@ const Blackjack = ({ onBack }) => {
             </div>
 
             <div className="grid grid-cols-3 gap-2 w-full">
-              <button onClick={() => submitResult(minBet)} className="bg-green-500/20 border border-green-500 text-green-400 py-3 rounded-xl font-bold active:bg-green-500/30">WIN</button>
-              <button onClick={() => submitResult(0)} className="bg-gray-500/20 border border-gray-500 text-gray-400 py-3 rounded-xl font-bold active:bg-gray-500/30">PUSH</button>
-              <button onClick={() => submitResult(-Math.min(minBet, balance))} className="bg-red-500/20 border border-red-500 text-red-400 py-3 rounded-xl font-bold active:bg-red-500/30">LOSS</button>
+              <button onClick={() => submitResult(recBet)} className="flex flex-col items-center justify-center bg-green-500/20 border border-green-500 text-green-400 py-3 rounded-xl active:bg-green-500/30">
+                <span className="font-bold text-sm">WIN</span>
+                <span className="text-xs opacity-80">+{sym}{recBet}</span>
+              </button>
+              <button onClick={() => submitResult(0)} className="flex flex-col items-center justify-center bg-gray-500/20 border border-gray-500 text-gray-400 py-3 rounded-xl active:bg-gray-500/30">
+                <span className="font-bold text-sm">PUSH</span>
+                <span className="text-xs opacity-80">{sym}0</span>
+              </button>
+              <button onClick={() => submitResult(-Math.min(recBet, balance))} className="flex flex-col items-center justify-center bg-red-500/20 border border-red-500 text-red-400 py-3 rounded-xl active:bg-red-500/30">
+                <span className="font-bold text-sm">LOSS</span>
+                <span className="text-xs opacity-80">-{sym}{Math.min(recBet, balance)}</span>
+              </button>
             </div>
           </div>
         ) : (
           <div className="w-full">
+            {playerCards.length === 0 && (
+              <div className="bg-[#0a0f1c] border border-blue-500/30 rounded-xl p-3 mb-6 flex justify-between items-center shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+                <div className="text-left">
+                  <div className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Next Optimal Bet</div>
+                  <div className="text-xs text-gray-500 font-medium">Based on True Count</div>
+                </div>
+                <div className="text-2xl font-black text-white">{sym}{recBet}</div>
+              </div>
+            )}
+
             <div className="flex justify-between mb-6">
               <div className="w-1/2 border-r border-gray-800">
                 <div className="text-[10px] text-gray-500 uppercase mb-2">Player Cards</div>
