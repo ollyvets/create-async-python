@@ -74,3 +74,22 @@ class HandHistory(Base):
     recommended_bet: Mapped[float] = mapped_column(Float, default=0.0)
     profit: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class RouletteSession(Base):
+    __tablename__ = "roulette_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id"))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+class RouletteSpin(Base):
+    __tablename__ = "roulette_spins"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(Integer, ForeignKey("roulette_sessions.id", ondelete="CASCADE"))
+    number: Mapped[int] = mapped_column(Integer) # Выпавшее число: 0-36
+    order_index: Mapped[int] = mapped_column(Integer) # Порядковый номер спина для сохранения хронологии
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
