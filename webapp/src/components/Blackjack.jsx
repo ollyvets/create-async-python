@@ -87,7 +87,8 @@ const Blackjack = ({ onBack }) => {
   };
 
   const recBet = getRecommendedBet();
-  const finalBet = customBet !== '' ? parseFloat(customBet) : recBet;
+  const finalBetRaw = customBet !== '' ? parseFloat(customBet) : recBet;
+  const finalBet = Math.min(finalBetRaw, session.balance > 0 ? session.balance : finalBetRaw);
 
   const handleResultSubmit = (outcome) => {
     submitResult(outcome, finalBet, recBet);

@@ -21,3 +21,8 @@ DATABASE Migrations:
 
 python -m alembic revision --autogenerate -m "....."
 python -m alembic upgrade head
+
+
+Docker
+
+docker-compose up -d

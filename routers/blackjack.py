@@ -58,7 +58,6 @@ async def get_active_session(
     if not game_session:
         return {"has_active": False}
         
-    # Данные берем из Redis, так как они самые свежие
     state_key = get_bj_state_key(game_session.id)
     state = await redis_client.hgetall(state_key)
     
@@ -81,7 +80,6 @@ async def start_session(
     user: User = Depends(get_current_user), 
     db: AsyncSession = Depends(get_session)
 ):
-    # Ищем зависшую сессию и сбрасываем ее в БД
     result = await db.execute(
         select(GameSession)
         .where(GameSession.telegram_id == user.telegram_id, GameSession.is_active == True)
@@ -90,7 +88,6 @@ async def start_session(
     if active_session:
         await flush_bj_session_to_db(db, active_session.id)
     
-    # Очистка старых сессий (оставляем логику как было)
     is_active_vip = await check_vip_status(user)
     keep_limit = 10 if is_active_vip else 1
     
@@ -127,7 +124,6 @@ async def start_session(
     await db.commit()
     await db.refresh(new_session)
     
-    # Инициализируем Redis state
     state_key = get_bj_state_key(new_session.id)
     await redis_client.hset(state_key, mapping={
         "balance": float(req.deposit),
@@ -140,7 +136,6 @@ async def start_session(
 
 @blackjack_router.post("/analyze")
 async def analyze_hand(req: AnalyzeRequest):
-    # Теперь анализатор не дергает базу данных вообще
     analyzer = BlackjackAnalyzer(total_decks=6) 
     decks_remaining = 6.0 - (req.cards_dealt / 52.0)
     
@@ -162,19 +157,25 @@ async def record_result(req: ResultRequest):
     if not state:
         raise HTTPException(status_code=400, detail="Session expired or invalid")
 
-    # Жесткий расчет профита сервером, а не доверие фронту
-    profit = 0.0
-    actual_bet = abs(float(req.actual_bet)) # Защита от отрицательных ставок
+    current_balance = float(state.get("balance", 0))
     
+    actual_bet = abs(float(req.actual_bet))
+    
+    if actual_bet > current_balance and current_balance > 0:
+        actual_bet = current_balance
+    if actual_bet > 100000:
+        actual_bet = 100000
+
+    profit = 0.0
     if req.outcome == 'WIN':
         profit = actual_bet
     elif req.outcome == 'LOSS':
         profit = -actual_bet
+    elif req.outcome == 'PUSH':
+        profit = 0.0
 
-    current_balance = float(state.get("balance", 0))
     new_balance = max(0.0, current_balance + profit)
     
-    # Сохраняем новое состояние
     await redis_client.hset(state_key, mapping={
         "balance": new_balance,
         "running_count": float(req.running_count),
@@ -184,7 +185,6 @@ async def record_result(req: ResultRequest):
     analyzer = BlackjackAnalyzer()
     true_count = analyzer.get_true_count(req.running_count, req.cards_dealt)
 
-    # Формируем запись раздачи и пушим в Redis List
     hand_record = {
         "player_cards": req.player_cards,
         "dealer_upcard": req.dealer_upcard,
@@ -194,13 +194,15 @@ async def record_result(req: ResultRequest):
         "is_correct": (req.action_taken == req.action_recommended),
         "actual_bet": actual_bet,
         "recommended_bet": req.recommended_bet,
-        "profit": profit
+        "profit": profit,
+        "outcome": req.outcome
     }
     
     await redis_client.rpush(get_bj_hands_key(req.session_id), json.dumps(hand_record))
     
     return {
         "status": "recorded", 
+        "profit": profit,
         "new_balance": new_balance,
         "new_running_count": req.running_count
     }

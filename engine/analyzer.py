@@ -118,4 +118,39 @@ class BlackjackAnalyzer:
         elif val == 10 or val == 11:
             return -1
         return 0
-    
+
+def calculate_outcome(self, player_cards: List[str], dealer_cards: List[str], action: str) -> Tuple[str, float]:
+        """
+        Возвращает кортеж: (Итоговый результат, Множитель ставки)
+        """
+        if action == Action.SURRENDER.value or action == "SURRENDER":
+            return "LOSS", -0.5
+
+        player_total, _, _ = self._parse_hand(player_cards)
+        dealer_total, _, _ = self._parse_hand(dealer_cards)
+
+        # Проверка на перебор игрока
+        if player_total > 21:
+            return "LOSS", -1.0
+
+        # Проверка на натуральный блэкджек (21 очко с первых двух карт)
+        player_has_bj = (player_total == 21 and len(player_cards) == 2)
+        dealer_has_bj = (dealer_total == 21 and len(dealer_cards) == 2)
+
+        if player_has_bj and not dealer_has_bj:
+            return "WIN", 1.5
+        if dealer_has_bj and not player_has_bj:
+            return "LOSS", -1.0
+        if player_has_bj and dealer_has_bj:
+            return "PUSH", 0.0
+
+        # Сравнение очков, если никто не перебрал и нет блэкджека
+        if dealer_total > 21:
+            return "WIN", 1.0
+        
+        if player_total > dealer_total:
+            return "WIN", 1.0
+        elif player_total < dealer_total:
+            return "LOSS", -1.0
+        else:
+            return "PUSH", 0.0

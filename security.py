@@ -12,13 +12,17 @@ from config import BOT_TOKEN
 from database.db import get_session
 from database.models import User
 
+# Константа времени жизни токена (2 часа = 7200 секунд)
+AUTH_VALID_DURATION = 7200 
+
 def verify_telegram_data(init_data: str) -> dict | bool:
     try:
         parsed_data = dict(parse_qsl(init_data))
         hash_value = parsed_data.pop('hash', None)
         
         auth_date = int(parsed_data.get('auth_date', 0))
-        if time.time() - auth_date > 86400:
+        # Проверка срока годности токена
+        if time.time() - auth_date > AUTH_VALID_DURATION:
             return False
 
         data_check_string = "\n".join([f"{k}={v}" for k, v in sorted(parsed_data.items())])
