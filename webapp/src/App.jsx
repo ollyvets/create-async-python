@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Shield, Zap, Activity, Gift, X, Target, BarChart2 } from 'lucide-react';
 import Blackjack from './components/Blackjack';
 import Analytics from './components/Analytics';
+import Roulette from './components/Roulette'; // ДОБАВЛЕН ИМПОРТ РУЛЕТКИ
 
 const App = () => {
 
@@ -67,29 +68,6 @@ const App = () => {
       );
   }
 
-  // --- ВРЕМЕННО ОТКЛЮЧЕН ЭКРАН PAYWALL ---
-  /*
-  if (!isVip) {
-    return (
-      <div className="h-screen bg-[#0a0f1c] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-500">
-        <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.15)]">
-           <Shield size={40} className="text-red-500" />
-        </div>
-        <h2 className="text-3xl font-black text-white mb-3">ACCESS DENIED</h2>
-        <p className="text-gray-400 mb-8 max-w-xs mx-auto text-sm leading-relaxed">
-          Your VIP subscription or trial period has expired. Please renew your access in the Telegram bot to continue using the analyzer.
-        </p>
-        <button 
-          onClick={() => window.Telegram?.WebApp?.close()} 
-          className="bg-blue-600 hover:bg-blue-500 text-white font-black py-4 px-12 rounded-2xl transition-all active:scale-95 uppercase tracking-widest text-sm shadow-[0_0_20px_rgba(37,99,235,0.3)]"
-        >
-          Return to Bot
-        </button>
-      </div>
-    );
-  }
-  */
-
   const renderHome = () => (
     <div className="animate-in fade-in zoom-in-95 duration-300">
       <div className="bg-gradient-to-r from-blue-900/40 to-purple-900/40 border border-blue-500/30 rounded-2xl p-4 mb-6 relative overflow-hidden flex items-center justify-between">
@@ -139,6 +117,8 @@ const App = () => {
        {currentView === 'home' && renderHome()}
        {currentView === 'blackjack' && <Blackjack onBack={() => setCurrentView('home')} />}
        {currentView === 'analytics' && <Analytics onBack={() => setCurrentView('home')} />}
+       {/* ДОБАВЛЕН РЕНДЕР РУЛЕТКИ */}
+       {currentView === 'roulette' && <Roulette onBack={() => setCurrentView('home')} />}
       </main>
       
       {showCrashPopup && (

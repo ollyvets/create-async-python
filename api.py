@@ -14,7 +14,6 @@ from database.models import User, PostbackLog
 from database.crud import check_vip_status
 from security import verify_telegram_data
 
-# Импортируем роутеры
 from routers.blackjack import blackjack_router
 from routers.roulette import router as roulette_router
 
@@ -30,9 +29,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Подключаем модули игр
 app.include_router(blackjack_router)
-# app.include_router(roulette_router) # <-- Раскомментируй, когда добавишь roulette.py
+app.include_router(roulette_router) 
 
 @app.get("/api/postback")
 async def handle_postback(
