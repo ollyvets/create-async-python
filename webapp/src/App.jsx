@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Zap, Activity, Gift, X, Target } from 'lucide-react';
+import { Shield, Zap, Activity, Gift, X, Target, BarChart2 } from 'lucide-react';
 import Blackjack from './components/Blackjack';
-// import Roulette from './components/Roulette';
-// import Crash from './components/Crash'; 
+import Analytics from './components/Analytics';
 
 const App = () => {
-  // Для тестов ставим isVip сразу в true
+
   const [isVip, setIsVip] = useState(true); 
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('home');
@@ -118,6 +117,10 @@ const App = () => {
           <div className="text-left"><div className="text-lg font-black text-white">Crash X-Engine</div><div className="text-xs text-gray-500">Aviator & Lucky Jet</div></div>
           <div className="absolute top-3 right-3 bg-red-500/20 text-red-400 text-[9px] px-2 py-1 rounded-full font-bold uppercase tracking-widest border border-red-500/20">BETA</div>
         </button>
+        <button onClick={() => setCurrentView('analytics')} className="w-full bg-[#151b2b] border border-gray-800 hover:border-green-500/50 rounded-2xl p-5 flex items-center gap-4 active:scale-95 transition-all">
+          <div className="bg-green-500/10 p-3 rounded-xl"><BarChart2 size={28} className="text-green-400" /></div>
+          <div className="text-left"><div className="text-lg font-black text-white">Session Analytics</div><div className="text-xs text-gray-500">P&L History & Bankroll Tracker</div></div>
+        </button>
       </div>
     </div>
   );
@@ -133,10 +136,9 @@ const App = () => {
       </header>
       
       <main className="flex-1 overflow-y-auto p-4 hide-scrollbar">
-        {currentView === 'home' && renderHome()}
-        {currentView === 'blackjack' && <Blackjack onBack={() => setCurrentView('home')} />}
-        {/* Раскомментируй это, когда создашь файл Roulette.jsx */}
-        {/* {currentView === 'roulette' && <Roulette onBack={() => setCurrentView('home')} />} */}
+       {currentView === 'home' && renderHome()}
+       {currentView === 'blackjack' && <Blackjack onBack={() => setCurrentView('home')} />}
+       {currentView === 'analytics' && <Analytics onBack={() => setCurrentView('home')} />}
       </main>
       
       {showCrashPopup && (

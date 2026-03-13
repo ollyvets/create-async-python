@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
 from aiogram import Bot
 from pydantic import BaseModel
-from typing import List
+from typing import List, Literal
 
 from config import BOT_TOKEN, POSTBACK_SECRET, CRYPTO_PAY_TOKEN
 from database.db import get_session
@@ -37,9 +37,8 @@ class ResultRequest(BaseModel):
     dealer_upcard: str
     action_taken: str
     action_recommended: str
-    profit: float
-    new_running_count: int
-    new_cards_dealt: int
+    bet_amount: float
+    outcome: Literal['WIN', 'LOSS', 'PUSH']
 
 def verify_telegram_data(init_data: str) -> dict | bool:
     try:
@@ -102,6 +101,7 @@ async def start_session(
     user: User = Depends(get_current_user), 
     session: AsyncSession = Depends(get_session)
 ):
+    # Закрываем активную сессию
     await session.execute(
         update(GameSession)
         .where(GameSession.telegram_id == user.telegram_id)
@@ -109,12 +109,36 @@ async def start_session(
         .values(is_active=False, ended_at=datetime.utcnow())
     )
     
-    if not user.is_vip:
-        subquery = select(GameSession.id).where(GameSession.telegram_id == user.telegram_id)
+    # ЛОГИКА ОЧИСТКИ (VIP = 10 последних, Free = 1 последняя)
+    keep_limit = 10 if user.is_vip else 1
+    
+    # Находим ID сессий, которые нужно оставить
+    keep_sessions_query = select(GameSession.id).where(
+        GameSession.telegram_id == user.telegram_id
+    ).order_by(GameSession.id.desc()).limit(keep_limit)
+    
+    keep_sessions_result = await session.execute(keep_sessions_query)
+    keep_session_ids = keep_sessions_result.scalars().all()
+    
+    if keep_session_ids:
+        # Удаляем историю раздач старых сессий
         await session.execute(
-            delete(HandHistory).where(HandHistory.session_id.in_(subquery))
+            delete(HandHistory)
+            .where(
+                HandHistory.session_id.in_(
+                    select(GameSession.id).where(GameSession.telegram_id == user.telegram_id)
+                )
+            )
+            .where(HandHistory.session_id.not_in(keep_session_ids))
+        )
+        # Удаляем сами старые сессии
+        await session.execute(
+            delete(GameSession)
+            .where(GameSession.telegram_id == user.telegram_id)
+            .where(GameSession.id.not_in(keep_session_ids))
         )
     
+    # Создаем новую сессию
     new_session = GameSession(
         telegram_id=user.telegram_id,
         start_balance=req.deposit,
@@ -168,16 +192,29 @@ async def record_result(
     if not game_session or game_session.telegram_id != user.telegram_id or not game_session.is_active:
         raise HTTPException(status_code=400, detail="Invalid session")
 
+    # 1. Серверный расчет профита
+    profit = 0.0
+    if req.outcome == 'WIN':
+        profit = req.bet_amount
+    elif req.outcome == 'LOSS':
+        profit = -req.bet_amount
+
     # ЗАЩИТА ОТ МИНУСА
-    user.virtual_balance = max(0.0, user.virtual_balance + req.profit)
-    game_session.current_balance = max(0.0, game_session.current_balance + req.profit)
+    user.virtual_balance = max(0.0, user.virtual_balance + profit)
+    game_session.current_balance = max(0.0, game_session.current_balance + profit)
     
-    game_session.running_count = req.new_running_count
-    game_session.cards_dealt = req.new_cards_dealt
-    
+    # 2. Серверный пересчет карт и счетчика
     analyzer = BlackjackAnalyzer()
-    decks_remaining = 6.0 - (req.new_cards_dealt / 52.0)
-    true_count = analyzer.get_true_count(req.new_running_count, req.new_cards_dealt)
+    
+    # Считаем влияние новых карт на True Count
+    all_new_cards = req.player_cards + [req.dealer_upcard] if req.dealer_upcard else req.player_cards
+    round_count_change = sum([analyzer._get_count_value(c) for c in all_new_cards])
+    
+    game_session.running_count += round_count_change
+    game_session.cards_dealt += len(all_new_cards)
+    
+    decks_remaining = 6.0 - (game_session.cards_dealt / 52.0)
+    true_count = analyzer.get_true_count(game_session.running_count, game_session.cards_dealt)
 
     hand_history = HandHistory(
         session_id=game_session.id,
@@ -187,13 +224,17 @@ async def record_result(
         action_taken=req.action_taken,
         action_recommended=req.action_recommended,
         is_correct=(req.action_taken == req.action_recommended),
-        profit=req.profit
+        profit=profit
     )
     
     session.add(hand_history)
     await session.commit()
     
-    return {"status": "recorded", "new_balance": game_session.current_balance}
+    return {
+        "status": "recorded", 
+        "new_balance": game_session.current_balance,
+        "new_running_count": game_session.running_count
+    }
 
 @app.get("/api/postback")
 async def handle_postback(
@@ -304,3 +345,56 @@ async def validate_user(request: Request, session: AsyncSession = Depends(get_se
         return {"is_vip": True, "user": tg_user}
     
     return {"is_vip": False}
+
+@app.get("/api/bj/analytics")
+async def get_analytics(
+    user: User = Depends(get_current_user), 
+    session: AsyncSession = Depends(get_session)
+):
+    limit = 10 if user.is_vip else 1
+    
+    # Получаем сессии пользователя (от новых к старым)
+    result = await session.execute(
+        select(GameSession)
+        .where(GameSession.telegram_id == user.telegram_id)
+        .order_by(GameSession.started_at.desc())
+        .limit(limit)
+    )
+    sessions = result.scalars().all()
+    
+    analytics_data = []
+    
+    for s in sessions:
+        # Получаем историю раздач (от старых к новым для правильного графика)
+        hands_result = await session.execute(
+            select(HandHistory)
+            .where(HandHistory.session_id == s.id)
+            .order_by(HandHistory.created_at.asc())
+        )
+        hands = hands_result.scalars().all()
+        
+        # Формируем точки для графика (PnL)
+        chart_data = [{"hand_num": 0, "balance": s.start_balance, "profit": 0}] # Стартовая точка
+        
+        current_bal = s.start_balance
+        for idx, hand in enumerate(hands, 1):
+            current_bal += hand.profit
+            chart_data.append({
+                "hand_num": idx,
+                "profit": hand.profit,
+                "balance": current_bal,
+                "is_correct": hand.is_correct # На будущее для версии 2.0
+            })
+            
+        analytics_data.append({
+            "session_id": s.id,
+            "is_active": s.is_active,
+            "started_at": s.started_at.isoformat() + "Z" if s.started_at else None,
+            "ended_at": s.ended_at.isoformat() + "Z" if s.ended_at else None,
+            "start_balance": s.start_balance,
+            "end_balance": s.current_balance,
+            "total_hands": len(hands),
+            "chart_data": chart_data
+        })
+        
+    return {"sessions": analytics_data}

@@ -37,32 +37,42 @@ class BlackjackAnalyzer:
         return running_count / decks_remaining
 
     def _calculate_probabilities(self, action: Action, player_total: int, dealer_val: int) -> Tuple[float, float, float]:
-        base_win = 42.0
-        base_loss = 49.0
-        base_push = 9.0
+        
+        dealer_bust_prob = {2: 35.3, 3: 37.5, 4: 40.2, 5: 42.8, 6: 42.0, 7: 25.9, 8: 23.8, 9: 23.3, 10: 21.4, 11: 11.6}
+        db_prob = dealer_bust_prob.get(dealer_val, 25.0)
+
+        win, loss, push = 0.0, 0.0, 0.0
 
         if action == Action.STAND:
             if player_total >= 19:
-                base_win = 75.0 - (dealer_val * 1.5)
+                win, loss, push = 75.0, 15.0, 10.0
             elif player_total >= 17:
-                base_win = 50.0 - (dealer_val * 2.0)
+                win, loss, push = 45.0, 45.0, 10.0
             else:
-                base_win = 30.0 - (dealer_val * 1.5)
+                # Надежда только на перебор дилера
+                win = db_prob
+                loss = 100.0 - db_prob
+                push = 0.0
+
         elif action == Action.HIT or action == Action.DOUBLE:
             if player_total <= 11:
-                base_win = 55.0 - (dealer_val * 1.2)
+                win, loss, push = 55.0, 40.0, 5.0
             else:
-                base_win = 40.0 - (dealer_val * 1.5)
+                # Риск перебора игрока
+                bust_risk = (player_total - 11) * 8.0 
+                win = max(10.0, 50.0 - bust_risk + (db_prob * 0.5))
+                loss = 100.0 - win - 5.0
+                push = 5.0
+
         elif action == Action.SPLIT:
-            base_win = 52.0 - (dealer_val * 1.2)
+            win, loss, push = 48.0, 48.0, 4.0
+            
         elif action == Action.SURRENDER:
             return (0.0, 100.0, 0.0)
 
-        base_win = max(5.0, min(85.0, base_win))
-        base_push = max(2.0, min(15.0, base_push))
-        base_loss = 100.0 - base_win - base_push
-
-        return round(base_win, 1), round(base_loss, 1), round(base_push, 1)
+        # Нормализация
+        total = win + loss + push
+        return round((win/total)*100, 1), round((loss/total)*100, 1), round((push/total)*100, 1)
 
     def get_recommendation(self, state: GameState) -> Recommendation:
         player_total, is_soft, is_split = self._parse_hand(state.player_cards)
@@ -99,3 +109,13 @@ class BlackjackAnalyzer:
         if is_soft:
             return SOFT_STRATEGY.get(total, {}).get(dealer_val, Action.HIT)
         return HARD_STRATEGY.get(total, {}).get(dealer_val, Action.HIT)
+
+    def _get_count_value(self, card: str) -> int:
+       
+        val = self._get_card_value(card)
+        if val >= 2 and val <= 6:
+            return 1
+        elif val == 10 or val == 11:
+            return -1
+        return 0
+    
