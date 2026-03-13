@@ -53,6 +53,9 @@ class GameSession(Base):
     running_count: Mapped[int] = mapped_column(Integer, default=0)
     cards_dealt: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    
+    currency: Mapped[str] = mapped_column(String, default="USD")
+    
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 

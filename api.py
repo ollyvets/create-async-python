@@ -25,6 +25,7 @@ bot = Bot(token=BOT_TOKEN)
 class SessionStartRequest(BaseModel):
     total_decks: int
     deposit: float
+    currency: str = "USD"
 
 class AnalyzeRequest(BaseModel):
     session_id: int
@@ -113,7 +114,8 @@ async def start_session(
         .values(is_active=False, ended_at=datetime.utcnow())
     )
     
-    keep_limit = 10 if user.is_vip else 1
+    is_active_vip = await check_vip_status(user)
+    keep_limit = 10 if is_active_vip else 1
     
     keep_sessions_query = select(GameSession.id).where(
         GameSession.telegram_id == user.telegram_id
@@ -144,7 +146,8 @@ async def start_session(
         current_balance=req.deposit,
         running_count=0,
         cards_dealt=0,
-        is_active=True
+        is_active=True,
+        currency=req.currency
     )
     session.add(new_session)
     await session.commit()
@@ -347,7 +350,9 @@ async def get_analytics(
     user: User = Depends(get_current_user), 
     session: AsyncSession = Depends(get_session)
 ):
-    limit = 10 if user.is_vip else 1
+    is_active_vip = await check_vip_status(user)
+    limit = 10 if is_active_vip else 1
+    
     result = await session.execute(
         select(GameSession)
         .where(GameSession.telegram_id == user.telegram_id)
@@ -398,10 +403,11 @@ async def get_analytics(
         analytics_data.append({
             "session_id": s.id,
             "is_active": s.is_active,
+            "currency": s.currency, # <-- ОТДАЕМ ВАЛЮТУ НА ФРОНТ
             "started_at": s.started_at.isoformat() + "Z" if s.started_at else None,
             "start_balance": s.start_balance,
             "end_balance": s.current_balance,
-            "theo_end_balance": curr_theo_bal, 
+            "theo_end_balance": curr_theo_bal,
             "total_hands": len(hands),
             "chart_data": chart_data
         })

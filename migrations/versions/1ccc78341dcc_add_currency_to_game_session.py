@@ -1,8 +1,8 @@
-"""add actual and recommended bets
+"""add currency to game session
 
-Revision ID: 0960637dd815
+Revision ID: 1ccc78341dcc
 Revises: 
-Create Date: 2026-03-13 10:26:25.457373
+Create Date: 2026-03-13 11:52:52.917905
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0960637dd815'
+revision: str = '1ccc78341dcc'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -55,6 +55,7 @@ def upgrade() -> None:
     sa.Column('running_count', sa.Integer(), nullable=False),
     sa.Column('cards_dealt', sa.Integer(), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('currency', sa.String(), nullable=False),
     sa.Column('started_at', sa.DateTime(), nullable=False),
     sa.Column('ended_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['telegram_id'], ['users.telegram_id'], ),

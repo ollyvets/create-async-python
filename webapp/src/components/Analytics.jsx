@@ -3,6 +3,17 @@ import { ChevronLeft, TrendingUp, TrendingDown, AlertCircle, BarChart2, ShieldCh
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts';
 import { useAnalytics } from '../hooks/useAnalytics';
 
+const getCurrencySymbol = (curr) => {
+  switch(curr) {
+    case 'USD': return '$';
+    case 'EUR': return '€';
+    case 'UAH': return '₴';
+    case 'RUB': return '₽';
+    case 'KZT': return '₸';
+    default: return '$';
+  }
+};
+
 const Analytics = ({ onBack }) => {
   const initData = window.Telegram?.WebApp?.initData || '';
   const { sessions, loading, error, selectedSession, setSelectedSession } = useAnalytics(initData);
@@ -25,6 +36,9 @@ const Analytics = ({ onBack }) => {
     return new Date(dateString).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
   };
 
+  const sym = selectedSession ? getCurrencySymbol(selectedSession.currency) : '$';
+  const deviationCost = selectedSession ? (selectedSession.theo_end_balance - selectedSession.end_balance) : 0;
+
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
@@ -32,16 +46,14 @@ const Analytics = ({ onBack }) => {
         <div className="bg-[#151b2b] border border-gray-700 p-3 rounded-xl shadow-xl">
           <p className="text-[10px] text-gray-500 uppercase font-bold mb-2">Hand #{data.hand_num}</p>
           <div className="space-y-1">
-            <p className="text-white text-xs">Real: <span className="font-bold">${data.balance.toFixed(2)}</span></p>
-            <p className="text-blue-400 text-xs">Strategy: <span className="font-bold">${data.theo_balance.toFixed(2)}</span></p>
+            <p className="text-white text-xs">Real: <span className="font-bold">{sym}{data.balance.toFixed(2)}</span></p>
+            <p className="text-blue-400 text-xs">Strategy: <span className="font-bold">{sym}{data.theo_balance.toFixed(2)}</span></p>
           </div>
         </div>
       );
     }
     return null;
   };
-
-  const deviationCost = selectedSession ? (selectedSession.theo_end_balance - selectedSession.end_balance) : 0;
 
   return (
     <div className="flex flex-col h-full pb-4 animate-in fade-in duration-200 relative">
@@ -81,17 +93,20 @@ const Analytics = ({ onBack }) => {
       ) : (
         <>
           <div className="mb-6 flex gap-3 overflow-x-auto pb-2 hide-scrollbar">
-            {sessions.map((s) => (
-              <button
-                key={s.session_id}
-                onClick={() => setSelectedSession(s)}
-                className={`min-w-[140px] p-4 rounded-2xl border text-left transition-all ${selectedSession?.session_id === s.session_id ? 'bg-blue-600/10 border-blue-500' : 'bg-[#151b2b] border-gray-800'}`}
-              >
-                <div className="text-[10px] text-gray-500 font-bold mb-1">{formatDate(s.started_at)}</div>
-                <div className="text-lg font-black text-white">${s.end_balance.toFixed(0)}</div>
-                <div className="text-[10px] text-gray-500 uppercase font-bold">Hands: {s.total_hands}</div>
-              </button>
-            ))}
+            {sessions.map((s) => {
+              const sessionSym = getCurrencySymbol(s.currency);
+              return (
+                <button
+                  key={s.session_id}
+                  onClick={() => setSelectedSession(s)}
+                  className={`min-w-[140px] p-4 rounded-2xl border text-left transition-all ${selectedSession?.session_id === s.session_id ? 'bg-blue-600/10 border-blue-500' : 'bg-[#151b2b] border-gray-800'}`}
+                >
+                  <div className="text-[10px] text-gray-500 font-bold mb-1">{formatDate(s.started_at)}</div>
+                  <div className="text-lg font-black text-white">{sessionSym}{s.end_balance.toFixed(0)}</div>
+                  <div className="text-[10px] text-gray-500 uppercase font-bold">Hands: {s.total_hands}</div>
+                </button>
+              )
+            })}
           </div>
 
           {selectedSession && (
@@ -100,13 +115,13 @@ const Analytics = ({ onBack }) => {
                 <div className="bg-[#151b2b] border border-gray-800 p-4 rounded-2xl">
                   <p className="text-[10px] text-gray-500 uppercase font-bold mb-1">Actual P&L</p>
                   <p className={`text-xl font-black ${selectedSession.end_balance >= selectedSession.start_balance ? 'text-green-400' : 'text-red-400'}`}>
-                    ${(selectedSession.end_balance - selectedSession.start_balance).toFixed(2)}
+                    {selectedSession.end_balance >= selectedSession.start_balance ? '+' : ''}{sym}{Math.abs(selectedSession.end_balance - selectedSession.start_balance).toFixed(2)}
                   </p>
                 </div>
                 <div className="bg-[#151b2b] border border-gray-800 p-4 rounded-2xl">
                   <p className="text-[10px] text-blue-400 uppercase font-bold mb-1">Cost of Thrill</p>
                   <p className={`text-xl font-black ${deviationCost > 0 ? 'text-orange-400' : 'text-gray-400'}`}>
-                    {deviationCost > 0 ? '-' : ''}${Math.abs(deviationCost).toFixed(2)}
+                    {deviationCost > 0 ? '-' : ''}{sym}{Math.abs(deviationCost).toFixed(2)}
                   </p>
                 </div>
               </div>

@@ -29,7 +29,11 @@ export const useBlackjack = (initData) => {
 
   const startSession = async () => {
     try {
-      const data = await apiFetch('/api/bj/session', 'POST', { total_decks: session.decks, deposit: session.deposit });
+      const data = await apiFetch('/api/bj/session', 'POST', { 
+        total_decks: session.decks, 
+        deposit: session.deposit,
+        currency: session.currency 
+      });
       setSession(prev => ({ ...prev, id: data.session_id, balance: data.balance, runningCount: 0, cardsDealt: 0 }));
       setHand({ playerCards: [], dealerCard: null, recommendation: null, actionStack: [] });
       setPhase('count');
