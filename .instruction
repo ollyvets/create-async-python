@@ -14,7 +14,7 @@ python bot.py                                                           |  run b
 
 !-------------------------------------------------------------------------------------! GIT 
 git add .
-git commit -m "Feature: Full working version in Codespaces with SQLite and WebApp"
+git commit -m "..."
 git push origin main
 
 DATABASE Migrations:

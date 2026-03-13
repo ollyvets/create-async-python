@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, TrendingUp, TrendingDown, AlertCircle, BarChart2, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, AlertCircle, BarChart2, ShieldCheck } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts';
 import { useAnalytics } from '../hooks/useAnalytics';
 
@@ -47,7 +47,7 @@ const Analytics = ({ onBack }) => {
           <p className="text-[10px] text-gray-500 uppercase font-bold mb-2">Hand #{data.hand_num}</p>
           <div className="space-y-1">
             <p className="text-white text-xs">Real: <span className="font-bold">{sym}{data.balance.toFixed(2)}</span></p>
-            <p className="text-blue-400 text-xs">Strategy: <span className="font-bold">{sym}{data.theo_balance.toFixed(2)}</span></p>
+            <p className="text-gray-400 text-xs">Strategy: <span className="font-bold">{sym}{data.theo_balance.toFixed(2)}</span></p>
           </div>
         </div>
       );
@@ -129,29 +129,31 @@ const Analytics = ({ onBack }) => {
               <div className="bg-[#151b2b] border border-gray-800 rounded-3xl p-4 flex-grow min-h-[300px] flex flex-col">
                 <div className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mb-4">Balance Comparison</div>
                 <div className="flex-grow w-full">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" key={selectedSession.session_id}>
                     <LineChart data={selectedSession.chart_data}>
                       <XAxis dataKey="hand_num" hide />
                       <YAxis domain={['auto', 'auto']} hide />
-                      <Tooltip content={<CustomTooltip />} />
+                      <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#374151', strokeWidth: 1, strokeDasharray: '3 3' }} />
                       <Legend verticalAlign="top" height={36}/>
                       <ReferenceLine y={selectedSession.start_balance} stroke="#374151" strokeDasharray="3 3" />
                       <Line 
                         name="Your Game"
                         type="monotone" 
                         dataKey="balance" 
-                        stroke="#fff" 
+                        stroke="#39ff14" 
                         strokeWidth={2}
-                        dot={false}
+                        dot={{ r: 3, fill: '#151b2b', stroke: '#39ff14', strokeWidth: 2 }}
+                        activeDot={{ r: 5, fill: '#39ff14', stroke: '#fff', strokeWidth: 2 }}
                       />
                       <Line 
                         name="Strategy"
                         type="monotone" 
                         dataKey="theo_balance" 
-                        stroke="#3b82f6" 
+                        stroke="#ffffff" 
                         strokeWidth={2}
                         strokeDasharray="5 5"
-                        dot={false}
+                        dot={{ r: 3, fill: '#151b2b', stroke: '#ffffff', strokeWidth: 2 }}
+                        activeDot={{ r: 5, fill: '#ffffff', stroke: '#39ff14', strokeWidth: 2 }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
