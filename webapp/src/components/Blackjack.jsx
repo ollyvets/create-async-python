@@ -21,12 +21,19 @@ const Blackjack = ({ onBack }) => {
 
   const [showEndModal, setShowEndModal] = useState(false);
   const [showBankruptModal, setShowBankruptModal] = useState(false);
+  const [customBet, setCustomBet] = useState('');
 
   useEffect(() => {
     if (session.balance <= 0 && phase === 'count' && session.id) {
       setShowBankruptModal(true);
     }
   }, [session.balance, phase, session.id]);
+
+  useEffect(() => {
+    if (hand.playerCards.length === 0) {
+      setCustomBet('');
+    }
+  }, [hand.playerCards.length]);
 
   const getCurrencySymbol = (curr) => {
     switch(curr) {
@@ -73,6 +80,12 @@ const Blackjack = ({ onBack }) => {
   };
 
   const recBet = getRecommendedBet();
+  const finalBet = customBet !== '' ? parseFloat(customBet) : recBet;
+
+  const handleResultSubmit = (outcome) => {
+    submitResult(outcome, finalBet, recBet);
+    setCustomBet('');
+  };
 
   if (phase === 'loading') {
     return <div className="flex h-full items-center justify-center text-white font-bold tracking-widest uppercase">Initializing...</div>;
@@ -231,12 +244,6 @@ const Blackjack = ({ onBack }) => {
       </div>
 
       <div className="bg-[#151b2b] border border-gray-800 rounded-2xl p-4 mb-4 flex-grow flex flex-col justify-center items-center text-center relative">
-        {phase === 'count' && hand.actionStack.length > 0 && (
-          <button onClick={undoLastAction} className="absolute top-4 right-4 text-gray-400 bg-[#0a0f1c] p-2 rounded-lg border border-gray-700 active:scale-95 transition-transform">
-            <RotateCcw size={16} />
-          </button>
-        )}
-
         {phase === 'action' && hand.recommendation ? (
           <div className="w-full mt-4 animate-in slide-in-from-bottom-4 duration-200">
             <div className="text-sm text-gray-400 font-bold uppercase mb-2">Mathematical Advantage</div>
@@ -261,29 +268,45 @@ const Blackjack = ({ onBack }) => {
             </div>
 
             <div className="grid grid-cols-3 gap-2 w-full">
-              <button onClick={() => submitResult('WIN', recBet)} className="flex flex-col items-center justify-center bg-green-500/20 border border-green-500 text-green-400 py-3 rounded-xl active:bg-green-500/30">
+              <button onClick={() => handleResultSubmit('WIN')} className="flex flex-col items-center justify-center bg-green-500/20 border border-green-500 text-green-400 py-3 rounded-xl active:bg-green-500/30">
                 <span className="font-bold text-sm">WIN</span>
-                <span className="text-xs opacity-80">+{sym}{recBet}</span>
+                <span className="text-xs opacity-80">+{sym}{finalBet}</span>
               </button>
-              <button onClick={() => submitResult('PUSH', recBet)} className="flex flex-col items-center justify-center bg-gray-500/20 border border-gray-500 text-gray-400 py-3 rounded-xl active:bg-gray-500/30">
+              <button onClick={() => handleResultSubmit('PUSH')} className="flex flex-col items-center justify-center bg-gray-500/20 border border-gray-500 text-gray-400 py-3 rounded-xl active:bg-gray-500/30">
                 <span className="font-bold text-sm">PUSH</span>
                 <span className="text-xs opacity-80">{sym}0</span>
               </button>
-              <button onClick={() => submitResult('LOSS', Math.min(recBet, session.balance))} className="flex flex-col items-center justify-center bg-red-500/20 border border-red-500 text-red-400 py-3 rounded-xl active:bg-red-500/30">
+              <button onClick={() => handleResultSubmit('LOSS')} className="flex flex-col items-center justify-center bg-red-500/20 border border-red-500 text-red-400 py-3 rounded-xl active:bg-red-500/30">
                 <span className="font-bold text-sm">LOSS</span>
-                <span className="text-xs opacity-80">-{sym}{Math.min(recBet, session.balance)}</span>
+                <span className="text-xs opacity-80">-{sym}{Math.min(finalBet, session.balance)}</span>
               </button>
             </div>
           </div>
         ) : (
           <div className="w-full">
             {hand.playerCards.length === 0 && (
-              <div className="bg-[#0a0f1c] border border-blue-500/30 rounded-xl p-3 mb-6 flex justify-between items-center shadow-[0_0_15px_rgba(59,130,246,0.1)]">
-                <div className="text-left">
-                  <div className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Next Optimal Bet</div>
-                  <div className="text-xs text-gray-500 font-medium">Based on True Count</div>
+              <div className="bg-[#0a0f1c] border border-blue-500/30 rounded-xl p-4 mb-6 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="text-left">
+                    <div className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Recommended Bet</div>
+                    <div className="text-xs text-gray-500 font-medium">Based on True Count</div>
+                  </div>
+                  <div className="text-2xl font-black text-white">{sym}{recBet}</div>
                 </div>
-                <div className="text-2xl font-black text-white">{sym}{recBet}</div>
+                
+                <div className="border-t border-gray-800 pt-4">
+                  <label className="text-[10px] text-gray-500 font-bold uppercase block mb-2 text-left">Your Actual Bet (Optional)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-black">{sym}</span>
+                    <input 
+                      type="number" 
+                      value={customBet} 
+                      onChange={(e) => setCustomBet(e.target.value)} 
+                      placeholder={recBet.toString()} 
+                      className="w-full bg-[#151b2b] border border-gray-700 rounded-xl pl-8 pr-3 py-3 text-white font-black outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
+                    />
+                  </div>
+                </div>
               </div>
             )}
 
@@ -298,7 +321,15 @@ const Blackjack = ({ onBack }) => {
               </div>
             </div>
 
-            <div className="text-left text-[10px] text-gray-500 uppercase tracking-widest mb-2">Fast Count Input</div>
+            <div className="flex justify-between items-center mb-2 mt-4">
+              <div className="text-left text-[10px] text-gray-500 uppercase tracking-widest">Fast Count Input</div>
+              {phase === 'count' && hand.actionStack.length > 0 && (
+                <button onClick={undoLastAction} className="flex items-center gap-1 text-[10px] text-gray-400 font-bold uppercase border border-gray-700 bg-[#0a0f1c] px-2 py-1 rounded-md active:scale-95 transition-transform">
+                  <RotateCcw size={12} /> Undo
+                </button>
+              )}
+            </div>
+            
             <div className="grid grid-cols-3 gap-2 mb-2">
               <button onClick={() => updateCount(1)} className="bg-[#1a2333] border border-gray-700 py-3 rounded-xl text-green-400 font-black text-xl active:bg-green-500/20 transition-colors">+1</button>
               <button onClick={() => updateCount(0)} className="bg-[#1a2333] border border-gray-700 py-3 rounded-xl text-gray-400 font-black text-xl active:bg-gray-500/20 transition-colors">0</button>

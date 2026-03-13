@@ -80,13 +80,19 @@ export const useBlackjack = (initData) => {
 
   const analyzeHand = async () => {
     try {
-      const data = await apiFetch('/api/bj/analyze', 'POST', { session_id: session.id, player_cards: hand.playerCards, dealer_upcard: hand.dealerCard });
+      const data = await apiFetch('/api/bj/analyze', 'POST', { 
+        session_id: session.id, 
+        player_cards: hand.playerCards, 
+        dealer_upcard: hand.dealerCard,
+        running_count: session.runningCount, // <-- ТЕПЕРЬ СИНХРОНИЗИРУЕМ СЕРВЕР С ФРОНТОМ
+        cards_dealt: session.cardsDealt
+      });
       setHand(prev => ({ ...prev, recommendation: data }));
       setPhase('action');
     } catch (e) { console.error(e); }
   };
 
-  const submitResult = async (outcome, betAmount) => {
+  const submitResult = async (outcome, actualBet, recommendedBet) => {
     try {
       const data = await apiFetch('/api/bj/result', 'POST', {
         session_id: session.id,
@@ -94,8 +100,11 @@ export const useBlackjack = (initData) => {
         dealer_upcard: hand.dealerCard,
         action_taken: 'UNKNOWN',
         action_recommended: hand.recommendation.action,
-        bet_amount: betAmount,
-        outcome: outcome
+        actual_bet: actualBet,
+        recommended_bet: recommendedBet,
+        outcome: outcome,
+        running_count: session.runningCount, // <-- ТЕПЕРЬ СИНХРОНИЗИРУЕМ СЕРВЕР С ФРОНТОМ
+        cards_dealt: session.cardsDealt
       });
       setSession(prev => ({ ...prev, balance: data.new_balance, runningCount: data.new_running_count }));
       resetHand();

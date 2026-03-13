@@ -17,3 +17,7 @@ git add .
 git commit -m "Feature: Full working version in Codespaces with SQLite and WebApp"
 git push origin main
 
+DATABASE Migrations:
+
+python -m alembic revision --autogenerate -m "....."
+python -m alembic upgrade head

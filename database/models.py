@@ -67,5 +67,7 @@ class HandHistory(Base):
     action_taken: Mapped[Optional[str]] = mapped_column(String)
     action_recommended: Mapped[str] = mapped_column(String)
     is_correct: Mapped[Optional[bool]] = mapped_column(Boolean)
+    actual_bet: Mapped[float] = mapped_column(Float, default=0.0)
+    recommended_bet: Mapped[float] = mapped_column(Float, default=0.0)
     profit: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
