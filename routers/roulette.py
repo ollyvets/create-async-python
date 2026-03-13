@@ -2,34 +2,18 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
 
-from database.db import get_session  # Исправлено: get_session вместо get_db
+from database.db import get_session
 from database.crud import (
-    create_roulette_session, add_roulette_spin, 
-    add_roulette_spins_bulk, get_roulette_session_history,
-    delete_old_free_sessions, check_vip_status
+    create_roulette_session, delete_old_free_sessions, 
+    check_vip_status, flush_session_to_db, get_active_session_for_user
 )
-from database.models import User, RouletteSession
+from database.models import User
+from database.redis import redis_client, get_session_key
 from engine.roulette_analyzer import RouletteAnalyzer
 from security import get_current_user
 
 router = APIRouter(prefix="/api/roulette", tags=["Roulette"])
-
-# Утилита для очистки старых сессий VIP (можно вынести в crud.py позже)
-async def cleanup_vip_sessions(db: AsyncSession, telegram_id: int):
-    result = await db.execute(
-        select(RouletteSession.id)
-        .where(RouletteSession.telegram_id == telegram_id)
-        .order_by(RouletteSession.created_at.desc())
-        .offset(10)
-    )
-    old_session_ids = result.scalars().all()
-    if old_session_ids:
-        await db.execute(
-            delete(RouletteSession).where(RouletteSession.id.in_(old_session_ids))
-        )
-        await db.commit()
 
 class RouletteSyncRequest(BaseModel):
     session_id: int
@@ -39,6 +23,9 @@ class RouletteSpinRequest(BaseModel):
     session_id: int
     number: int
 
+class RouletteCloseRequest(BaseModel):
+    session_id: int
+
 @router.post("/session")
 async def start_session(
     user: User = Depends(get_current_user), 
@@ -46,26 +33,38 @@ async def start_session(
 ):
     is_vip = await check_vip_status(user)
     
-    if is_vip:
-        await cleanup_vip_sessions(db, user.telegram_id)
-    else:
+    # Проверяем, есть ли зависшая активная сессия. Если да - сбрасываем ее в БД.
+    active_session = await get_active_session_for_user(db, user.telegram_id)
+    if active_session:
+        await flush_session_to_db(db, active_session.id)
+    
+    # Очистка старых данных
+    if not is_vip:
         await delete_old_free_sessions(db, user.telegram_id)
+    # VIP сессии пока не трогаем, пусть висят в истории
 
+    # Создаем новую запись в БД
     session = await create_roulette_session(db, user.telegram_id)
+    
+    # Очищаем возможный старый ключ в Redis на всякий случай
+    await redis_client.delete(get_session_key(session.id))
+    
     return {"session_id": session.id, "is_vip": is_vip}
 
 @router.post("/sync")
 async def sync_history(
     req: RouletteSyncRequest, 
-    user: User = Depends(get_current_user), 
-    db: AsyncSession = Depends(get_session)
+    user: User = Depends(get_current_user)
 ):
     is_vip = await check_vip_status(user)
+    redis_key = get_session_key(req.session_id)
     
-    await add_roulette_spins_bulk(db, req.session_id, req.numbers)
-    history = await get_roulette_session_history(db, req.session_id)
+    # Очищаем Redis и заливаем новую пачку (sync перезаписывает историю)
+    await redis_client.delete(redis_key)
+    if req.numbers:
+        await redis_client.rpush(redis_key, *req.numbers)
     
-    analyzer = RouletteAnalyzer(history)
+    analyzer = RouletteAnalyzer(req.numbers)
     analysis = analyzer.analyze()
     
     if not is_vip:
@@ -77,17 +76,20 @@ async def sync_history(
 @router.post("/spin")
 async def add_spin(
     req: RouletteSpinRequest, 
-    user: User = Depends(get_current_user), 
-    db: AsyncSession = Depends(get_session)
+    user: User = Depends(get_current_user)
 ):
     is_vip = await check_vip_status(user)
+    redis_key = get_session_key(req.session_id)
     
-    history = await get_roulette_session_history(db, req.session_id)
-    next_index = len(history)
+    # Добавляем в конец списка в Redis
+    await redis_client.rpush(redis_key, req.number)
     
-    await add_roulette_spin(db, req.session_id, req.number, next_index)
-    history.append(req.number)
+    # Читаем всю историю из Redis
+    history_str = await redis_client.lrange(redis_key, 0, -1)
+    history = [int(n) for n in history_str]
     
+    # Здесь можно добавить оптимизацию в будущем: если len(history) > 200, 
+    # передавать в анализатор только срез history[-200:], чтобы не грузить CPU
     analyzer = RouletteAnalyzer(history)
     analysis = analyzer.analyze()
     
@@ -96,3 +98,12 @@ async def add_spin(
         analysis.pop("sectors", None)
         
     return analysis
+
+@router.post("/close")
+async def close_session(
+    req: RouletteCloseRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    await flush_session_to_db(db, req.session_id)
+    return {"status": "ok"}

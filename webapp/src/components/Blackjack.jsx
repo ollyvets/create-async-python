@@ -16,12 +16,19 @@ const Blackjack = ({ onBack }) => {
     updateCount,
     undoLastAction,
     submitResult,
-    getRecommendedBet
+    getRecommendedBet,
+    closeSession // <-- ДОБАВЛЕНО СЮДА
   } = useBlackjack(initData);
 
   const [showEndModal, setShowEndModal] = useState(false);
   const [showBankruptModal, setShowBankruptModal] = useState(false);
   const [customBet, setCustomBet] = useState('');
+
+  // ОБЕРТКА ДЛЯ ВЫХОДА НА ГЛАВНЫЙ ЭКРАН
+  const handleBack = () => {
+    closeSession();
+    onBack();
+  };
 
   useEffect(() => {
     if (session.balance <= 0 && phase === 'count' && session.id) {
@@ -95,7 +102,7 @@ const Blackjack = ({ onBack }) => {
     return (
       <div className="flex flex-col h-full p-4">
         <div className="flex items-center gap-3 mb-8">
-          <button onClick={onBack} className="bg-[#151b2b] p-2 rounded-xl border border-gray-800 active:scale-95 transition-transform">
+          <button onClick={handleBack} className="bg-[#151b2b] p-2 rounded-xl border border-gray-800 active:scale-95 transition-transform">
             <ChevronLeft size={24} className="text-gray-400" />
           </button>
         </div>
@@ -113,7 +120,7 @@ const Blackjack = ({ onBack }) => {
               <button onClick={() => setPhase('count')} className="w-full bg-blue-600 text-white font-black py-4 rounded-xl active:scale-95 transition-transform uppercase tracking-wider">
                 Resume Session
               </button>
-              <button onClick={() => setPhase('setup')} className="w-full bg-[#0a0f1c] border border-gray-700 text-gray-400 font-black py-4 rounded-xl active:scale-95 transition-transform uppercase tracking-wider">
+              <button onClick={() => { closeSession(); setPhase('setup'); }} className="w-full bg-[#0a0f1c] border border-gray-700 text-gray-400 font-black py-4 rounded-xl active:scale-95 transition-transform uppercase tracking-wider">
                 Discard & New Shoe
               </button>
             </div>
@@ -127,7 +134,7 @@ const Blackjack = ({ onBack }) => {
     return (
       <div className="flex flex-col h-full pb-4 animate-in slide-in-from-right-4 duration-200">
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={onBack} className="bg-[#151b2b] p-2 rounded-xl border border-gray-800 active:scale-95 transition-transform">
+          <button onClick={handleBack} className="bg-[#151b2b] p-2 rounded-xl border border-gray-800 active:scale-95 transition-transform">
             <ChevronLeft size={24} className="text-gray-400" />
           </button>
           <div>
@@ -204,7 +211,7 @@ const Blackjack = ({ onBack }) => {
           <div className="bg-[#151b2b] border border-red-900 p-6 rounded-2xl w-full max-w-sm text-center animate-in zoom-in duration-200 shadow-[0_0_50px_rgba(220,38,38,0.3)]">
             <h3 className="text-3xl font-black text-red-500 mb-2 tracking-widest uppercase">Bankrupt</h3>
             <p className="text-sm text-gray-400 mb-8">You have lost your entire bankroll for this shoe. It's time to step away or start a new session.</p>
-            <button onClick={() => { setShowBankruptModal(false); setPhase('setup'); }} className="w-full bg-red-600 text-white font-bold py-4 rounded-xl active:scale-95 transition-transform uppercase tracking-wider shadow-lg shadow-red-900/50">
+            <button onClick={() => { closeSession(); setShowBankruptModal(false); setPhase('setup'); }} className="w-full bg-red-600 text-white font-bold py-4 rounded-xl active:scale-95 transition-transform uppercase tracking-wider shadow-lg shadow-red-900/50">
               Setup New Shoe
             </button>
           </div>
@@ -220,7 +227,7 @@ const Blackjack = ({ onBack }) => {
               <button onClick={() => setShowEndModal(false)} className="flex-1 bg-[#0a0f1c] border border-gray-700 text-white font-bold py-3 rounded-xl active:scale-95 transition-transform">
                 Cancel
               </button>
-              <button onClick={() => { setShowEndModal(false); setPhase('setup'); }} className="flex-1 bg-red-600 text-white font-bold py-3 rounded-xl active:scale-95 transition-transform">
+              <button onClick={() => { closeSession(); setShowEndModal(false); setPhase('setup'); }} className="flex-1 bg-red-600 text-white font-bold py-3 rounded-xl active:scale-95 transition-transform">
                 End Shoe
               </button>
             </div>
@@ -230,7 +237,7 @@ const Blackjack = ({ onBack }) => {
 
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="bg-[#151b2b] p-2 rounded-xl border border-gray-800 active:scale-95 transition-transform">
+          <button onClick={handleBack} className="bg-[#151b2b] p-2 rounded-xl border border-gray-800 active:scale-95 transition-transform">
             <ChevronLeft size={24} className="text-gray-400" />
           </button>
           <div>

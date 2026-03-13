@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import List, Literal
 
@@ -8,7 +9,8 @@ from pydantic import BaseModel
 
 from database.db import get_session
 from database.models import User, GameSession, HandHistory
-from database.crud import check_vip_status
+from database.crud import check_vip_status, flush_bj_session_to_db
+from database.redis import redis_client, get_bj_state_key, get_bj_hands_key
 from engine.bj_types import GameState
 from engine.analyzer import BlackjackAnalyzer
 from security import get_current_user
@@ -39,27 +41,37 @@ class ResultRequest(BaseModel):
     running_count: float  
     cards_dealt: int
 
+class CloseSessionRequest(BaseModel):
+    session_id: int
+
 @blackjack_router.get("/session/active")
 async def get_active_session(
     user: User = Depends(get_current_user), 
-    session: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session)
 ):
-    result = await session.execute(
+    result = await db.execute(
         select(GameSession)
-        .where(GameSession.telegram_id == user.telegram_id)
-        .where(GameSession.is_active == True)
+        .where(GameSession.telegram_id == user.telegram_id, GameSession.is_active == True)
     )
     game_session = result.scalar_one_or_none()
     
     if not game_session:
         return {"has_active": False}
         
+    # Данные берем из Redis, так как они самые свежие
+    state_key = get_bj_state_key(game_session.id)
+    state = await redis_client.hgetall(state_key)
+    
+    balance = float(state.get("balance", game_session.current_balance)) if state else game_session.current_balance
+    running_count = float(state.get("running_count", game_session.running_count)) if state else game_session.running_count
+    cards_dealt = int(state.get("cards_dealt", game_session.cards_dealt)) if state else game_session.cards_dealt
+
     return {
         "has_active": True,
         "session_id": game_session.id,
-        "balance": game_session.current_balance,
-        "running_count": game_session.running_count,
-        "cards_dealt": game_session.cards_dealt,
+        "balance": balance,
+        "running_count": running_count,
+        "cards_dealt": cards_dealt,
         "started_at": game_session.started_at.isoformat() + "Z" if game_session.started_at else None
     }
 
@@ -67,15 +79,18 @@ async def get_active_session(
 async def start_session(
     req: SessionStartRequest, 
     user: User = Depends(get_current_user), 
-    session: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session)
 ):
-    await session.execute(
-        update(GameSession)
-        .where(GameSession.telegram_id == user.telegram_id)
-        .where(GameSession.is_active == True)
-        .values(is_active=False, ended_at=datetime.utcnow())
+    # Ищем зависшую сессию и сбрасываем ее в БД
+    result = await db.execute(
+        select(GameSession)
+        .where(GameSession.telegram_id == user.telegram_id, GameSession.is_active == True)
     )
+    active_session = result.scalar_one_or_none()
+    if active_session:
+        await flush_bj_session_to_db(db, active_session.id)
     
+    # Очистка старых сессий (оставляем логику как было)
     is_active_vip = await check_vip_status(user)
     keep_limit = 10 if is_active_vip else 1
     
@@ -83,20 +98,17 @@ async def start_session(
         GameSession.telegram_id == user.telegram_id
     ).order_by(GameSession.id.desc()).limit(keep_limit)
     
-    keep_sessions_result = await session.execute(keep_sessions_query)
-    keep_session_ids = keep_sessions_result.scalars().all()
+    keep_session_ids = (await db.execute(keep_sessions_query)).scalars().all()
     
     if keep_session_ids:
-        await session.execute(
+        await db.execute(
             delete(HandHistory)
-            .where(
-                HandHistory.session_id.in_(
-                    select(GameSession.id).where(GameSession.telegram_id == user.telegram_id)
-                )
-            )
+            .where(HandHistory.session_id.in_(
+                select(GameSession.id).where(GameSession.telegram_id == user.telegram_id)
+            ))
             .where(HandHistory.session_id.not_in(keep_session_ids))
         )
-        await session.execute(
+        await db.execute(
             delete(GameSession)
             .where(GameSession.telegram_id == user.telegram_id)
             .where(GameSession.id.not_in(keep_session_ids))
@@ -111,29 +123,25 @@ async def start_session(
         is_active=True,
         currency=req.currency
     )
-    session.add(new_session)
-    await session.commit()
-    await session.refresh(new_session)
+    db.add(new_session)
+    await db.commit()
+    await db.refresh(new_session)
     
-    return {"session_id": new_session.id, "balance": new_session.current_balance}
+    # Инициализируем Redis state
+    state_key = get_bj_state_key(new_session.id)
+    await redis_client.hset(state_key, mapping={
+        "balance": float(req.deposit),
+        "running_count": 0.0,
+        "cards_dealt": 0
+    })
+    await redis_client.delete(get_bj_hands_key(new_session.id))
+    
+    return {"session_id": new_session.id, "balance": req.deposit}
 
 @blackjack_router.post("/analyze")
-async def analyze_hand(
-    req: AnalyzeRequest, 
-    user: User = Depends(get_current_user), 
-    session: AsyncSession = Depends(get_session)
-):
-    result = await session.execute(select(GameSession).where(GameSession.id == req.session_id))
-    game_session = result.scalar_one_or_none()
-    
-    if not game_session or game_session.telegram_id != user.telegram_id or not game_session.is_active:
-        raise HTTPException(status_code=400, detail="Invalid or inactive session")
-
-    game_session.running_count = req.running_count
-    game_session.cards_dealt = req.cards_dealt
-    await session.commit()
-
-    analyzer = BlackjackAnalyzer(total_decks=6)
+async def analyze_hand(req: AnalyzeRequest):
+    # Теперь анализатор не дергает базу данных вообще
+    analyzer = BlackjackAnalyzer(total_decks=6) 
     decks_remaining = 6.0 - (req.cards_dealt / 52.0)
     
     state = GameState(
@@ -147,53 +155,63 @@ async def analyze_hand(
     return recommendation.model_dump()
 
 @blackjack_router.post("/result")
-async def record_result(
-    req: ResultRequest, 
-    user: User = Depends(get_current_user), 
-    session: AsyncSession = Depends(get_session)
-):
-    result = await session.execute(select(GameSession).where(GameSession.id == req.session_id))
-    game_session = result.scalar_one_or_none()
+async def record_result(req: ResultRequest):
+    state_key = get_bj_state_key(req.session_id)
+    state = await redis_client.hgetall(state_key)
     
-    if not game_session or game_session.telegram_id != user.telegram_id or not game_session.is_active:
-        raise HTTPException(status_code=400, detail="Invalid session")
+    if not state:
+        raise HTTPException(status_code=400, detail="Session expired or invalid")
 
+    # Жесткий расчет профита сервером, а не доверие фронту
     profit = 0.0
-    if req.outcome == 'WIN':
-        profit = req.actual_bet
-    elif req.outcome == 'LOSS':
-        profit = -req.actual_bet
-
-    user.virtual_balance = max(0.0, user.virtual_balance + profit)
-    game_session.current_balance = max(0.0, game_session.current_balance + profit)
+    actual_bet = abs(float(req.actual_bet)) # Защита от отрицательных ставок
     
-    game_session.running_count = req.running_count
-    game_session.cards_dealt = req.cards_dealt
+    if req.outcome == 'WIN':
+        profit = actual_bet
+    elif req.outcome == 'LOSS':
+        profit = -actual_bet
+
+    current_balance = float(state.get("balance", 0))
+    new_balance = max(0.0, current_balance + profit)
+    
+    # Сохраняем новое состояние
+    await redis_client.hset(state_key, mapping={
+        "balance": new_balance,
+        "running_count": float(req.running_count),
+        "cards_dealt": int(req.cards_dealt)
+    })
     
     analyzer = BlackjackAnalyzer()
     true_count = analyzer.get_true_count(req.running_count, req.cards_dealt)
 
-    hand_history = HandHistory(
-        session_id=game_session.id,
-        player_cards=req.player_cards,
-        dealer_upcard=req.dealer_upcard,
-        true_count=true_count,
-        action_taken=req.action_taken,
-        action_recommended=req.action_recommended,
-        is_correct=(req.action_taken == req.action_recommended),
-        actual_bet=req.actual_bet,
-        recommended_bet=req.recommended_bet,
-        profit=profit
-    )
+    # Формируем запись раздачи и пушим в Redis List
+    hand_record = {
+        "player_cards": req.player_cards,
+        "dealer_upcard": req.dealer_upcard,
+        "true_count": true_count,
+        "action_taken": req.action_taken,
+        "action_recommended": req.action_recommended,
+        "is_correct": (req.action_taken == req.action_recommended),
+        "actual_bet": actual_bet,
+        "recommended_bet": req.recommended_bet,
+        "profit": profit
+    }
     
-    session.add(hand_history)
-    await session.commit()
+    await redis_client.rpush(get_bj_hands_key(req.session_id), json.dumps(hand_record))
     
     return {
         "status": "recorded", 
-        "new_balance": game_session.current_balance,
-        "new_running_count": game_session.running_count
+        "new_balance": new_balance,
+        "new_running_count": req.running_count
     }
+
+@blackjack_router.post("/close")
+async def close_session(
+    req: CloseSessionRequest,
+    db: AsyncSession = Depends(get_session)
+    ):
+    await flush_bj_session_to_db(db, req.session_id)
+    return {"status": "ok"}
 
 @blackjack_router.get("/analytics")
 async def get_analytics(

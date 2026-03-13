@@ -88,7 +88,7 @@ export const useBlackjack = (initData) => {
         session_id: session.id, 
         player_cards: hand.playerCards, 
         dealer_upcard: hand.dealerCard,
-        running_count: session.runningCount, // <-- ТЕПЕРЬ СИНХРОНИЗИРУЕМ СЕРВЕР С ФРОНТОМ
+        running_count: session.runningCount,
         cards_dealt: session.cardsDealt
       });
       setHand(prev => ({ ...prev, recommendation: data }));
@@ -107,7 +107,7 @@ export const useBlackjack = (initData) => {
         actual_bet: actualBet,
         recommended_bet: recommendedBet,
         outcome: outcome,
-        running_count: session.runningCount, // <-- ТЕПЕРЬ СИНХРОНИЗИРУЕМ СЕРВЕР С ФРОНТОМ
+        running_count: session.runningCount,
         cards_dealt: session.cardsDealt
       });
       setSession(prev => ({ ...prev, balance: data.new_balance, runningCount: data.new_running_count }));
@@ -133,5 +133,13 @@ export const useBlackjack = (initData) => {
     return Math.min(session.maxBet, session.balance, Math.max(session.minBet, session.minBet * multiplier));
   };
 
-  return { phase, setPhase, session, updateSessionConfig, startSession, hand, handleCardInput, updateCount, undoLastAction, submitResult, getRecommendedBet };
+  // НОВАЯ ФУНКЦИЯ ДЛЯ ЗАКРЫТИЯ СЕССИИ
+  const closeSession = async () => {
+    if (session.id) {
+      try {
+        await apiFetch('/api/bj/close', 'POST', { session_id: session.id });
+      } catch (e) { console.error(e); }
+    }
+  };
+  return { phase, setPhase, session, updateSessionConfig, startSession, hand, handleCardInput, updateCount, undoLastAction, submitResult, getRecommendedBet, closeSession };
 };
